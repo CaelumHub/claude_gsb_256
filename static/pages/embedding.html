@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>词向量可视化 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .scatter { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+    .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+    .nb-item { display: flex; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .nb-item:last-child { border: none; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">词向量可视化</h1>
+    <p class="page-desc">共现矩阵 PPMI + 截断 SVD（纯 Python 幂迭代）训练词向量，PCA 投影到二维。</p>
+
+    <section class="card">
+      <div class="row">
+        <div style="width:150px"><label>词表规模</label><input type="number" id="vocab" value="200" min="20" max="500"></div>
+        <div style="width:120px"><label>向量维度</label><input type="number" id="dim" value="20" min="5" max="50"></div>
+        <div style="width:120px"><label>聚类数</label><input type="number" id="clusters" value="5" min="2" max="10"></div>
+        <button class="btn" id="btn-train">训练词向量</button>
+        <span class="badge blue" id="stats"></span>
+      </div>
+      <p class="muted small mt">训练将使用语料库中的全部文本。</p>
+    </section>
+
+    <section class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">二维投影（PCA）</h2>
+        <span id="legend"></span>
+      </div>
+      <svg class="scatter" id="scatter" viewBox="0 0 860 520" height="520"></svg>
+    </section>
+
+    <section class="card">
+      <h2>相似词查询</h2>
+      <div class="row">
+        <input type="text" id="query-word" placeholder="输入词，如：自然语言" class="grow" style="max-width:300px">
+        <button class="btn" id="btn-query">查询近邻</button>
+      </div>
+      <div id="neighbors" class="mt"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("embedding.html");
+
+const CLUSTER_COLORS = ["#4f6ef7", "#16a34a", "#d97706", "#dc2626", "#7c3aed",
+  "#0891b2", "#be185d", "#65a30d", "#ea580c", "#2563eb"];
+
+function renderScatter(points, nClusters) {
+  const svg = $("#scatter");
+  if (!points.length) { svg.innerHTML = ""; return; }
+  const W = 860, H = 520, pad = 46;
+  let xs = points.map(p => p.x), ys = points.map(p => p.y);
+  let minX = Math.min(...xs), maxX = Math.max(...xs);
+  let minY = Math.min(...ys), maxY = Math.max(...ys);
+  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+  const sx = p => pad + (p.x - minX) / spanX * (W - 2 * pad);
+  const sy = p => H - pad - (p.y - minY) / spanY * (H - 2 * pad);
+
+  let circles = points.map((p, i) => {
+    const c = CLUSTER_COLORS[p.cluster % CLUSTER_COLORS.length];
+    return `<circle cx="${sx(p).toFixed(1)}" cy="${sy(p).toFixed(1)}" r="4.5" fill="${c}" opacity="0.85">
+      <title>${esc(p.word)}（类 ${p.cluster + 1}）</title></circle>
+      <text x="${sx(p).toFixed(1)}" y="${(sy(p) - 8).toFixed(1)}" font-size="11" fill="#4b5563" text-anchor="middle">${esc(p.word)}</text>`;
+  }).join("");
+
+  // 轴
+  const axis = `<line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="#cbd5e1"/>
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H - pad}" stroke="#cbd5e1"/>`;
+
+  svg.innerHTML = `<rect width="100%" height="100%" fill="#ffffff"/>${axis}${circles}`;
+
+  // 图例
+  $("#legend").innerHTML = Array.from({ length: nClusters }, (_, i) =>
+    `<span class="small" style="margin-right:10px"><span class="legend-dot" style="background:${CLUSTER_COLORS[i % CLUSTER_COLORS.length]}"></span>类 ${i + 1}</span>`).join("");
+}
+
+async function train() {
+  const btn = $("#btn-train");
+  setLoading(btn, true, "训练中…");
+  try {
+    const r = await api("/api/embeddings/train", {
+      method: "POST",
+      body: { vocab_size: parseInt($("#vocab").value), dim: parseInt($("#dim").value) },
+    });
+    $("#stats").textContent = `词表 ${r.vocab_size} · 维度 ${r.dim}`;
+    toast("训练完成");
+    loadVectors();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function loadVectors() {
+  const nClusters = parseInt($("#clusters").value);
+  try {
+    const r = await api(`/api/embeddings/vectors?clusters=${nClusters}`);
+    renderScatter(r.points, nClusters);
+    if (r.stats) $("#stats").textContent = `词表 ${r.stats.vocab_size} · 维度 ${r.stats.dim}`;
+  } catch (e) {
+    $("#scatter").innerHTML = `<text x="430" y="260" text-anchor="middle" fill="#9ca3af" font-size="14">尚未训练词向量，请先点击“训练词向量”</text>`;
+  }
+}
+
+async function query() {
+  const word = $("#query-word").value.trim();
+  if (!word) return toast("请输入词", "err");
+  try {
+    const r = await api(`/api/embeddings/neighbors?word=${encodeURIComponent(word)}&k=12`);
+    const nb = $("#neighbors");
+    if (!r.neighbors.length) { nb.innerHTML = '<span class="muted">该词不在词表中。</span>'; return; }
+    nb.innerHTML = r.neighbors.map(n => `
+      <div class="nb-item"><span>${esc(n.word)}</span><span class="muted small" style="font-family:var(--mono)">${n.similarity}</span></div>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+$("#btn-train").addEventListener("click", train);
+$("#btn-query").addEventListener("click", query);
+$("#clusters").addEventListener("change", loadVectors);
+
+loadVectors();
+</script>
+</body>
+</html>

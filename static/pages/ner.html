@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>命名实体识别 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">命名实体识别</h1>
+    <p class="page-desc">字典 + 正则 + 结构规则识别实体，支持人工标注并持久化到 JSON 存储。</p>
+
+    <section class="card">
+      <label>输入文本</label>
+      <textarea id="text">马云在北京的阿里巴巴公司工作，2024年10月1日发布了新产品，价格为99.9元。</textarea>
+      <div class="toolbar mt">
+        <button class="btn" id="btn-ner">识别实体</button>
+      </div>
+    </section>
+
+    <div class="grid cols-2">
+      <section class="card">
+        <h2>识别结果</h2>
+        <div id="highlight" class="output plain" style="font-size:16px;line-height:2"></div>
+        <div class="mt" id="entity-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>人工标注</h2>
+        <p class="muted small">选择文本片段，标注为某类实体后保存。</p>
+        <div class="mb">
+          <label>选中文本</label>
+          <input type="text" id="ann-text" readonly placeholder="在结果区用鼠标选中文字">
+        </div>
+        <div class="row mb">
+          <select id="ann-type" style="max-width:180px"></select>
+          <input type="text" id="ann-note" placeholder="备注（可选）" class="grow">
+        </div>
+        <button class="btn" id="btn-ann-add">添加到标注</button>
+        <div class="mt">
+          <h3>本次标注</h3>
+          <div id="ann-list" class="muted small">暂无</div>
+        </div>
+        <button class="btn secondary mt" id="btn-ann-save">保存标注</button>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">已保存标注</h2>
+        <button class="btn secondary small" id="btn-ann-refresh">刷新</button>
+      </div>
+      <div id="saved-list" class="muted">加载中…</div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("ner.html");
+
+let lastText = "", lastEntities = [], manual = [];
+
+// 实体类型下拉
+function fillTypes() {
+  const sel = $("#ann-type");
+  sel.innerHTML = Object.entries(ENTITY_NAMES)
+    .map(([id, n]) => `<option value="${id}">${n} (${id})</option>`).join("");
+}
+
+function renderResult() {
+  $("#highlight").innerHTML = highlightEntities(lastText, lastEntities);
+  const list = $("#entity-list");
+  if (!lastEntities.length) {
+    list.innerHTML = '<div class="muted">未识别到实体。</div>';
+    return;
+  }
+  list.innerHTML = `<h3>实体列表（${lastEntities.length}）</h3>` + lastEntities.map(e => `
+    <span class="badge blue" style="margin:2px"><span class="ent-${e.type}" style="padding:0 4px;border-radius:3px">${esc(e.text)}</span> · ${ENTITY_NAMES[e.type] || e.type} [${e.start}-${e.end}]</span>`).join(" ");
+}
+
+async function doNER() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-ner");
+  setLoading(btn, true, "识别中…");
+  try {
+    const r = await api("/api/ner", { method: "POST", body: { text } });
+    lastText = text; lastEntities = r.entities; manual = [];
+    renderResult(); renderManual();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+function renderManual() {
+  $("#ann-list").innerHTML = manual.length
+    ? manual.map((m, i) => `<div class="small"><span class="ent-${m.type}" style="padding:0 4px">${esc(m.text)}</span> ${ENTITY_NAMES[m.type]} <a href="#" onclick="rmManual(${i});return false">删除</a></div>`).join("")
+    : '<span class="muted small">暂无</span>';
+}
+
+function rmManual(i) { manual.splice(i, 1); renderManual(); }
+
+$("#btn-ann-add").addEventListener("click", () => {
+  const text = $("#ann-text").value.trim();
+  const type = $("#ann-type").value;
+  if (!text) return toast("请先在结果区选中文字", "err");
+  manual.push({ text, type });
+  $("#ann-text").value = ""; $("#ann-note").value = "";
+  renderManual();
+  toast("已添加到本次标注");
+});
+
+// 选择文字自动填入
+$("#highlight").addEventListener("mouseup", () => {
+  const s = window.getSelection().toString().trim();
+  if (s) $("#ann-text").value = s;
+});
+
+$("#btn-ann-save").addEventListener("click", async () => {
+  if (!manual.length) return toast("暂无标注可保存", "err");
+  try {
+    await api("/api/ner/annotate", {
+      method: "POST",
+      body: { text: lastText, entities: manual, note: $("#ann-note").value },
+    });
+    toast("标注已保存");
+    manual = []; renderManual();
+    loadSaved();
+  } catch (e) { toast(e.message, "err"); }
+});
+
+async function loadSaved() {
+  try {
+    const r = await api("/api/ner/annotations");
+    const list = $("#saved-list");
+    if (!r.annotations.length) { list.innerHTML = '<span class="muted">暂无标注</span>'; return; }
+    list.innerHTML = r.annotations.slice().reverse().map(a => `
+      <div class="list-item">
+        <div class="meta">
+          <div class="name">${esc(a.text.slice(0, 60))}${a.text.length > 60 ? "…" : ""}</div>
+          <div class="sub">${a.entities.map(e => esc(e.text)).join("、") || "无实体"} · ${fmtTime(a.created_at)}</div>
+        </div>
+      </div>`).join("");
+  } catch (e) { /* ignore */ }
+}
+
+$("#btn-ner").addEventListener("click", doNER);
+$("#btn-ann-refresh").addEventListener("click", loadSaved);
+
+fillTypes();
+loadSaved();
+doNER();
+</script>
+</body>
+</html>

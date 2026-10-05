@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>机器翻译 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .dir { display: inline-flex; align-items: center; gap: 8px; }
+    .swap { cursor: pointer; font-size: 20px; user-select: none; color: var(--primary); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">机器翻译</h1>
+    <p class="page-desc">基于平行词典与短语规则的模拟翻译（中文 ↔ 英文），非神经机器翻译。</p>
+
+    <section class="card">
+      <div class="toolbar">
+        <span class="dir">
+          <b id="src-label">中文</b>
+          <span class="swap" id="btn-swap" title="交换方向">⇄</span>
+          <b id="tgt-label">英文</b>
+        </span>
+        <span class="badge amber">词典 + 规则（模拟）</span>
+      </div>
+      <div class="mb">
+        <label id="src-placeholder">输入中文</label>
+        <textarea id="text">我喜欢机器学习，人工智能正在改变世界。</textarea>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="btn-trans">翻译</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>翻译结果</h2>
+      <div class="output" id="result" style="font-size:16px">尚未翻译。</div>
+      <div class="small muted mt" id="engine"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("translate.html");
+
+let direction = "zh2en";
+
+function syncLabels() {
+  if (direction === "zh2en") {
+    $("#src-label").textContent = "中文"; $("#tgt-label").textContent = "英文";
+    $("#src-placeholder").textContent = "输入中文";
+  } else {
+    $("#src-label").textContent = "英文"; $("#tgt-label").textContent = "中文";
+    $("#src-placeholder").textContent = "输入英文";
+  }
+}
+
+$("#btn-swap").addEventListener("click", () => {
+  direction = direction === "zh2en" ? "en2zh" : "zh2en";
+  syncLabels();
+  // 交换文本框内容
+  const cur = $("#text").value;
+  const res = $("#result").textContent;
+  if (res !== "尚未翻译。") $("#text").value = res;
+  else $("#text").value = cur;
+});
+
+async function doTranslate() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-trans");
+  setLoading(btn, true, "翻译中…");
+  try {
+    const r = await api("/api/translate", { method: "POST", body: { text, direction } });
+    $("#result").textContent = r.translation;
+    $("#engine").textContent = `引擎：${r.engine} · 方向 ${r.direction}`;
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+$("#btn-trans").addEventListener("click", doTranslate);
+syncLabels();
+</script>
+</body>
+</html>

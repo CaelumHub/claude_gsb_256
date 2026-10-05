@@ -1,0 +1,25 @@
+[
+  {
+    "name": "分析",
+    "config": {
+      "name": "分析",
+      "stages": [
+        {
+          "name": "segment"
+        },
+        {
+          "name": "pos"
+        },
+        {
+          "name": "sentiment"
+        },
+        {
+          "name": "keywords"
+        }
+      ]
+    },
+    "created_at": 1791179349.7200067,
+    "id": "pipeline_config_1",
+    "_created": 1791179349.720536
+  }
+]

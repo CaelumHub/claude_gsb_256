@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>情感分析 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .polarity { font-size: 20px; font-weight: 700; }
+    .p-positive { color: var(--green); }
+    .p-negative { color: var(--red); }
+    .p-neutral { color: var(--amber); }
+    .gauge-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .prob-bar { height: 22px; border-radius: 6px; background: #eef0f6; overflow: hidden; margin: 6px 0; position: relative; }
+    .prob-bar .fill { height: 100%; border-radius: 6px; transition: width .4s; }
+    .prob-bar .val { position: absolute; right: 8px; top: 2px; font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">情感分析</h1>
+    <p class="page-desc">情感词典打分（程度副词加权 + 否定翻转）与朴素贝叶斯分类结合。</p>
+
+    <section class="card">
+      <label>输入文本</label>
+      <textarea id="text">这个产品非常好用，性能强劲，我很喜欢；不过价格有点贵。</textarea>
+      <div class="toolbar mt">
+        <button class="btn" id="btn-analyze">情感分析</button>
+      </div>
+    </section>
+
+    <div class="grid cols-2">
+      <section class="card">
+        <h2>判定结果</h2>
+        <div class="polarity" id="polarity">—</div>
+        <div class="mt small muted">情感强度得分（-1 消极 ~ +1 积极）</div>
+        <div class="gauge mt" style="margin-top:20px">
+          <div class="gauge-label"><span>消极</span><span>中性</span><span>积极</span></div>
+          <div class="gauge" style="height:14px">
+            <div class="tick" style="left:50%"></div>
+            <div class="fill" id="gauge-fill" style="width:50%;background:#9ca3af"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>分类器概率</h2>
+        <div id="probs"><div class="muted">尚未分析。</div></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>情感词定位</h2>
+      <div id="highlighted" class="output plain" style="font-size:16px;line-height:2">尚未分析。</div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("sentiment.html");
+
+const POL = { positive: "积极", negative: "消极", neutral: "中性" };
+
+function highlightSentiment(text, posWords, negWords) {
+  const seg = posWords.concat(negWords);
+  if (!seg.length) return esc(text);
+  const set = new Set(seg);
+  // 简单分词定位：按词扫描
+  let out = "", i = 0;
+  const words = text.split(/([一-鿿]+)/);
+  for (const part of words) {
+    if (!part) continue;
+    if (/[一-鿿]/.test(part)) {
+      // 中文部分：尝试匹配情感词
+      let buf = "", j = 0;
+      for (let k = 0; k <= part.length; k++) {
+        const chunk = part.slice(j, k);
+        if (set.has(chunk)) {
+          const cls = posWords.includes(chunk) ? "pos-word" : "neg-word";
+          buf += `<span class="${cls}">${esc(chunk)}</span>`;
+          j = k;
+        } else if (k === part.length) {
+          buf += esc(part.slice(j));
+        }
+      }
+      out += buf;
+    } else {
+      out += esc(part);
+    }
+  }
+  return out;
+}
+
+async function doAnalyze() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-analyze");
+  setLoading(btn, true, "分析中…");
+  try {
+    const r = await api("/api/sentiment", { method: "POST", body: { text } });
+    const pol = r.polarity;
+    $("#polarity").textContent = `${POL[pol] || pol} · ${r.score >= 0 ? "+" : ""}${r.score}`;
+    $("#polarity").className = "polarity p-" + pol;
+    // 量表：score in [-1,1] -> 0..100
+    const pct = Math.round((r.score + 1) / 2 * 100);
+    const fill = $("#gauge-fill");
+    fill.style.width = pct + "%";
+    fill.style.background = pol === "positive" ? "#16a34a" : pol === "negative" ? "#dc2626" : "#d97706";
+    // 概率
+    const probs = r.classifier.probabilities;
+    const order = [["positive", "积极", "#16a34a"], ["neutral", "中性", "#d97706"], ["negative", "消极", "#dc2626"]];
+    $("#probs").innerHTML = order.map(([k, n, c]) => {
+      const v = Math.round((probs[k] || 0) * 100);
+      return `<div class="prob-bar"><div class="fill" style="width:${v}%;background:${c}"></div><span class="val">${n} ${v}%</span></div>`;
+    }).join("") + `<div class="small muted mt">分类器置信度 ${r.confidence}</div>`;
+    // 情感词高亮
+    $("#highlighted").innerHTML = highlightSentiment(text, r.positive_words, r.negative_words);
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+$("#btn-analyze").addEventListener("click", doAnalyze);
+</script>
+</body>
+</html>

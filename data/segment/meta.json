@@ -1,0 +1,8 @@
+{
+  "task": "segment",
+  "shard_size": 100,
+  "shard_count": 1,
+  "total": 2,
+  "next_id": 3,
+  "created_at": 1791179373.4263487
+}

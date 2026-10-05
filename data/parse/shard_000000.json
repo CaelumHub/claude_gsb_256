@@ -1,0 +1,506 @@
+[
+  {
+    "text": "北京大学的研究团队开发了高效的机器学习系统",
+    "result": {
+      "dependency": {
+        "words": [
+          "北京",
+          "大学",
+          "的",
+          "研究",
+          "团队",
+          "开发",
+          "了",
+          "高效",
+          "的",
+          "机器",
+          "学习",
+          "系统"
+        ],
+        "tags": [
+          "ns",
+          "n",
+          "u",
+          "n",
+          "n",
+          "v",
+          "u",
+          "n",
+          "u",
+          "n",
+          "v",
+          "n"
+        ],
+        "heads": [
+          5,
+          5,
+          1,
+          5,
+          5,
+          -1,
+          5,
+          10,
+          7,
+          10,
+          5,
+          10
+        ],
+        "relations": [
+          "nsubj",
+          "nsubj",
+          "mark",
+          "nsubj",
+          "nsubj",
+          "root",
+          "mark",
+          "nsubj",
+          "mark",
+          "nsubj",
+          "conj",
+          "dobj"
+        ]
+      },
+      "constituency": {
+        "words": [
+          "北京",
+          "大学",
+          "的",
+          "研究",
+          "团队",
+          "开发",
+          "了",
+          "高效",
+          "的",
+          "机器",
+          "学习",
+          "系统"
+        ],
+        "tags": [
+          "ns",
+          "n",
+          "u",
+          "n",
+          "n",
+          "v",
+          "u",
+          "n",
+          "u",
+          "n",
+          "v",
+          "n"
+        ],
+        "tree": {
+          "label": "S",
+          "word": null,
+          "children": [
+            {
+              "label": "NP",
+              "word": null,
+              "children": [
+                {
+                  "label": "ns",
+                  "word": "北京",
+                  "children": []
+                },
+                {
+                  "label": "NP",
+                  "word": null,
+                  "children": [
+                    {
+                      "label": "NP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "n",
+                          "word": "大学",
+                          "children": []
+                        },
+                        {
+                          "label": "u",
+                          "word": "的",
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "label": "NP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "n",
+                          "word": "研究",
+                          "children": []
+                        },
+                        {
+                          "label": "n",
+                          "word": "团队",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "label": "VP",
+              "word": null,
+              "children": [
+                {
+                  "label": "VP",
+                  "word": null,
+                  "children": [
+                    {
+                      "label": "v",
+                      "word": "开发",
+                      "children": []
+                    },
+                    {
+                      "label": "u",
+                      "word": "了",
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "label": "S",
+                  "word": null,
+                  "children": [
+                    {
+                      "label": "NP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "NP",
+                          "word": null,
+                          "children": [
+                            {
+                              "label": "n",
+                              "word": "高效",
+                              "children": []
+                            },
+                            {
+                              "label": "u",
+                              "word": "的",
+                              "children": []
+                            }
+                          ]
+                        },
+                        {
+                          "label": "n",
+                          "word": "机器",
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "label": "VP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "v",
+                          "word": "学习",
+                          "children": []
+                        },
+                        {
+                          "label": "n",
+                          "word": "系统",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "dep_rel_names": {
+        "root": "核心",
+        "nsubj": "主语",
+        "dobj": "宾语",
+        "amod": "定语修饰",
+        "nummod": "数量修饰",
+        "advmod": "状语修饰",
+        "conj": "并列",
+        "mark": "助词",
+        "case": "介词",
+        "clf": "量词",
+        "lobj": "方位",
+        "tmod": "时间修饰",
+        "compound": "复合词",
+        "punct": "标点",
+        "attr": "系词补语",
+        "dep": "其它"
+      },
+      "phrase_names": {
+        "S": "句子",
+        "NP": "名词短语",
+        "VP": "动词短语",
+        "AP": "形容词短语",
+        "PP": "介词短语",
+        "ADVP": "副词短语",
+        "P": "介词",
+        "CONJ": "连词",
+        "U": "助词",
+        "TP": "时间短语"
+      }
+    },
+    "created_at": 1791179856.8983622,
+    "id": "parse_1",
+    "_created": 1791179856.8992326
+  },
+  {
+    "text": "北京大学的研究团队开发了高效的机器学习系统",
+    "result": {
+      "dependency": {
+        "words": [
+          "北京",
+          "大学",
+          "的",
+          "研究",
+          "团队",
+          "开发",
+          "了",
+          "高效",
+          "的",
+          "机器",
+          "学习",
+          "系统"
+        ],
+        "tags": [
+          "ns",
+          "n",
+          "u",
+          "n",
+          "n",
+          "v",
+          "u",
+          "n",
+          "u",
+          "n",
+          "v",
+          "n"
+        ],
+        "heads": [
+          5,
+          5,
+          1,
+          5,
+          5,
+          -1,
+          5,
+          10,
+          7,
+          10,
+          5,
+          10
+        ],
+        "relations": [
+          "nsubj",
+          "nsubj",
+          "mark",
+          "nsubj",
+          "nsubj",
+          "root",
+          "mark",
+          "nsubj",
+          "mark",
+          "nsubj",
+          "conj",
+          "dobj"
+        ]
+      },
+      "constituency": {
+        "words": [
+          "北京",
+          "大学",
+          "的",
+          "研究",
+          "团队",
+          "开发",
+          "了",
+          "高效",
+          "的",
+          "机器",
+          "学习",
+          "系统"
+        ],
+        "tags": [
+          "ns",
+          "n",
+          "u",
+          "n",
+          "n",
+          "v",
+          "u",
+          "n",
+          "u",
+          "n",
+          "v",
+          "n"
+        ],
+        "tree": {
+          "label": "S",
+          "word": null,
+          "children": [
+            {
+              "label": "NP",
+              "word": null,
+              "children": [
+                {
+                  "label": "ns",
+                  "word": "北京",
+                  "children": []
+                },
+                {
+                  "label": "NP",
+                  "word": null,
+                  "children": [
+                    {
+                      "label": "NP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "n",
+                          "word": "大学",
+                          "children": []
+                        },
+                        {
+                          "label": "u",
+                          "word": "的",
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "label": "NP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "n",
+                          "word": "研究",
+                          "children": []
+                        },
+                        {
+                          "label": "n",
+                          "word": "团队",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "label": "VP",
+              "word": null,
+              "children": [
+                {
+                  "label": "VP",
+                  "word": null,
+                  "children": [
+                    {
+                      "label": "v",
+                      "word": "开发",
+                      "children": []
+                    },
+                    {
+                      "label": "u",
+                      "word": "了",
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "label": "S",
+                  "word": null,
+                  "children": [
+                    {
+                      "label": "NP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "NP",
+                          "word": null,
+                          "children": [
+                            {
+                              "label": "n",
+                              "word": "高效",
+                              "children": []
+                            },
+                            {
+                              "label": "u",
+                              "word": "的",
+                              "children": []
+                            }
+                          ]
+                        },
+                        {
+                          "label": "n",
+                          "word": "机器",
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "label": "VP",
+                      "word": null,
+                      "children": [
+                        {
+                          "label": "v",
+                          "word": "学习",
+                          "children": []
+                        },
+                        {
+                          "label": "n",
+                          "word": "系统",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "dep_rel_names": {
+        "root": "核心",
+        "nsubj": "主语",
+        "dobj": "宾语",
+        "amod": "定语修饰",
+        "nummod": "数量修饰",
+        "advmod": "状语修饰",
+        "conj": "并列",
+        "mark": "助词",
+        "case": "介词",
+        "clf": "量词",
+        "lobj": "方位",
+        "tmod": "时间修饰",
+        "compound": "复合词",
+        "punct": "标点",
+        "attr": "系词补语",
+        "dep": "其它"
+      },
+      "phrase_names": {
+        "S": "句子",
+        "NP": "名词短语",
+        "VP": "动词短语",
+        "AP": "形容词短语",
+        "PP": "介词短语",
+        "ADVP": "副词短语",
+        "P": "介词",
+        "CONJ": "连词",
+        "U": "助词",
+        "TP": "时间短语"
+      }
+    },
+    "created_at": 1791179857.8872156,
+    "id": "parse_2",
+    "_created": 1791179857.8876922
+  }
+]

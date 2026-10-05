@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>语料库管理 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">语料库管理</h1>
+    <p class="page-desc">上传、查看并清洗语料；语料以 JSON 分片文件存储，支持清洗去停用词。</p>
+
+    <div class="grid cols-2">
+      <!-- 上传 -->
+      <section class="card">
+        <h2>上传语料</h2>
+        <div class="mb">
+          <label>语料名称</label>
+          <input type="text" id="corpus-name" placeholder="例如：新闻语料（可选）">
+        </div>
+        <div class="mb">
+          <label>语料内容（粘贴文本）</label>
+          <textarea id="corpus-text" placeholder="在此粘贴语料文本…"></textarea>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-add">添加语料</button>
+          <span class="muted small">或</span>
+        </div>
+        <div class="mt">
+          <label>上传文件（.txt / .md / .json，支持 UTF-8 / GBK）</label>
+          <input type="file" id="corpus-file" accept=".txt,.md,.json,.csv">
+        </div>
+      </section>
+
+      <!-- 清洗 -->
+      <section class="card">
+        <h2>文本清洗</h2>
+        <div class="mb">
+          <label>选择语料</label>
+          <select id="clean-corpus"></select>
+        </div>
+        <div class="mb">
+          <label><input type="checkbox" id="remove-stopwords" checked> 去除停用词</label>
+        </div>
+        <button class="btn" id="btn-clean">执行清洗</button>
+        <div class="mt">
+          <h3>清洗结果</h3>
+          <div id="clean-result" class="muted small">尚未清洗。</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 语料列表 -->
+    <section class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">语料列表</h2>
+        <button class="btn secondary small" id="btn-refresh">刷新</button>
+      </div>
+      <div class="list" id="corpus-list">
+        <div class="muted">加载中…</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("corpus.html");
+
+let currentCorpora = [];
+
+async function loadCorpora() {
+  const list = $("#corpus-list");
+  list.innerHTML = '<div class="muted">加载中…</div>';
+  try {
+    const data = await api("/api/corpus");
+    currentCorpora = data.corpora;
+    if (!currentCorpora.length) {
+      list.innerHTML = '<div class="muted">暂无语料，请先上传。</div>';
+    } else {
+      list.innerHTML = currentCorpora.map(c => `
+        <div class="list-item">
+          <div class="meta">
+            <div class="name">${esc(c.name)} <span class="badge blue small">${c.length} 字</span></div>
+            <div class="sub">ID: ${esc(c.id)} · 创建于 ${fmtTime(c.created_at)}</div>
+            <div class="preview mt">${esc(c.preview)}</div>
+          </div>
+          <button class="btn secondary small" onclick="viewCorpus('${esc(c.id)}')">查看</button>
+          <button class="btn danger small" onclick="delCorpus('${esc(c.id)}')">删除</button>
+        </div>`).join("");
+    }
+    // 同步清洗下拉框
+    const sel = $("#clean-corpus");
+    sel.innerHTML = currentCorpora.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function addCorpus() {
+  const text = $("#corpus-text").value.trim();
+  const name = $("#corpus-name").value.trim();
+  if (!text) return toast("请输入语料内容", "err");
+  const btn = $("#btn-add");
+  setLoading(btn, true, "添加中…");
+  try {
+    await api("/api/corpus", { method: "POST", body: { name, text } });
+    toast("语料已添加");
+    $("#corpus-text").value = "";
+    $("#corpus-name").value = "";
+    loadCorpora();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function viewCorpus(id) {
+  try {
+    const r = await api(`/api/corpus/${id}`);
+    $("#clean-result").innerHTML =
+      `<strong>全文（${r.text.length} 字）：</strong><div class="output">${esc(r.text)}</div>`;
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function delCorpus(id) {
+  if (!confirm("确认删除该语料？")) return;
+  try {
+    await api(`/api/corpus/${id}`, { method: "DELETE" });
+    toast("已删除");
+    loadCorpora();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function cleanCorpus() {
+  const id = $("#clean-corpus").value;
+  if (!id) return toast("请先添加语料", "err");
+  const btn = $("#btn-clean");
+  setLoading(btn, true, "清洗中…");
+  try {
+    const r = await api(`/api/corpus/${id}/clean`, {
+      method: "POST",
+      body: { remove_stopwords: $("#remove-stopwords").checked },
+    });
+    $("#clean-result").innerHTML = `
+      <div class="mb">原文 ${r.original_tokens.length} 词，清洗后保留 ${r.tokens.length} 词，
+      去除停用词/符号 ${r.removed_stopwords} 个。</div>
+      <div class="output">${esc(r.cleaned)}</div>`;
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+// 文件上传
+$("#corpus-file").addEventListener("change", async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await api("/api/corpus/upload", { method: "POST", body: fd });
+    toast(`已上传「${r.name}」(${r.length} 字)`);
+    loadCorpora();
+  } catch (e) { toast(e.message, "err"); }
+  ev.target.value = "";
+});
+
+$("#btn-add").addEventListener("click", addCorpus);
+$("#btn-refresh").addEventListener("click", loadCorpora);
+$("#btn-clean").addEventListener("click", cleanCorpus);
+
+loadCorpora();
+</script>
+</body>
+</html>

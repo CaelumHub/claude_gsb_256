@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>流水线配置与执行 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .stage-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .stage-card { border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; cursor: pointer;
+      background: var(--surface-2); transition: all .15s; }
+    .stage-card:hover { border-color: var(--primary); background: var(--primary-soft); }
+    .stage-card .s-name { font-weight: 600; font-size: 14px; }
+    .stage-card .s-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .pipe-item { border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; margin-bottom: 10px; background: #fff; }
+    .pipe-item .p-head { display: flex; align-items: center; gap: 10px; }
+    .pipe-item .p-name { font-weight: 600; }
+    .pipe-item .p-order { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff;
+      font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+    .pipe-item .p-params { margin-top: 8px; }
+    .pipe-item textarea { font-size: 12px; min-height: 46px; font-family: var(--mono); }
+    .arrow { text-align: center; color: var(--text-muted); font-size: 18px; margin: -4px 0; }
+    .run-result { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: var(--surface-2);
+      border-radius: 8px; padding: 12px; max-height: 320px; overflow: auto; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">流水线配置与执行</h1>
+    <p class="page-desc">将 NLP 阶段编排为 DAG，支持参数配置、单条预览与批量并行执行。</p>
+
+    <div class="grid cols-2">
+      <!-- 阶段面板 -->
+      <section class="card">
+        <h2>可用阶段</h2>
+        <div class="stage-palette" id="palette">加载中…</div>
+      </section>
+
+      <!-- 流水线组装 -->
+      <section class="card">
+        <div class="toolbar">
+          <h2 style="margin:0;flex:1">流水线编排</h2>
+          <button class="btn secondary small" id="btn-clear">清空</button>
+        </div>
+        <div id="pipe-list"><div class="muted">从左侧点击阶段添加到流水线。</div></div>
+        <div class="row mt">
+          <input type="text" id="pipe-name" placeholder="流水线名称" style="max-width:200px">
+          <button class="btn secondary" id="btn-preview">预览运行</button>
+          <button class="btn" id="btn-save">保存配置</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">执行</h2>
+        <select id="saved-pipes" style="max-width:260px"><option value="">— 选择已保存流水线 —</option></select>
+        <button class="btn secondary small" id="btn-load">加载</button>
+      </div>
+      <div class="mb"><label>输入文本（单条执行）</label>
+        <textarea id="run-text">这个产品非常好用，性能强劲，我很喜欢。</textarea></div>
+      <div class="row">
+        <button class="btn" id="btn-run">执行单条</button>
+        <button class="btn secondary" id="btn-batch">批量执行（全部语料）</button>
+        <span class="badge blue" id="run-stat"></span>
+      </div>
+      <div class="mt"><h3>执行结果</h3><div class="run-result" id="run-out">尚未执行。</div></div>
+    </section>
+
+    <section class="card">
+      <h2>执行历史</h2>
+      <div id="history" class="muted">加载中…</div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("pipeline.html");
+
+let stages = [];        // 可用阶段元数据
+let pipe = [];          // 当前流水线 [{name, params, deps}]
+
+/* ---------- 阶段面板 ---------- */
+async function loadStages() {
+  const r = await api("/api/pipeline/stages");
+  stages = r.stages;
+  $("#palette").innerHTML = stages.map(s => `
+    <div class="stage-card" onclick="addStage('${esc(s.name)}')">
+      <div class="s-name">${esc(s.name)}</div>
+      <div class="s-desc">${esc(s.description)}</div>
+    </div>`).join("");
+}
+
+function addStage(name) {
+  if (pipe.some(s => s.name === name)) return toast("阶段已添加", "err");
+  const meta = stages.find(s => s.name === name);
+  pipe.push({ name, params: JSON.stringify(meta.params || {}), deps: "" });
+  renderPipe();
+}
+
+function removeStage(i) { pipe.splice(i, 1); renderPipe(); }
+function moveStage(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= pipe.length) return;
+  [pipe[i], pipe[j]] = [pipe[j], pipe[i]];
+  renderPipe();
+}
+
+function renderPipe() {
+  const el = $("#pipe-list");
+  if (!pipe.length) { el.innerHTML = '<div class="muted">从左侧点击阶段添加到流水线。</div>'; return; }
+  el.innerHTML = pipe.map((s, i) => `
+    <div class="pipe-item">
+      <div class="p-head">
+        <span class="p-order">${i + 1}</span>
+        <span class="p-name">${esc(s.name)}</span>
+        <span class="badge small">${esc((stages.find(x => x.name === s.name) || {}).description || "")}</span>
+        <span style="flex:1"></span>
+        <button class="btn secondary small" onclick="moveStage(${i},-1)">↑</button>
+        <button class="btn secondary small" onclick="moveStage(${i},1)">↓</button>
+        <button class="btn danger small" onclick="removeStage(${i})">移除</button>
+      </div>
+      <div class="p-params">
+        <label>参数 (JSON)</label>
+        <textarea onchange="pipe[${i}].params = this.value">${esc(s.params)}</textarea>
+      </div>
+    </div>`).join("");
+}
+
+function buildConfig() {
+  const name = $("#pipe-name").value.trim() || "流水线";
+  return {
+    name,
+    stages: pipe.map(s => {
+      let params = {};
+      try { params = JSON.parse(s.params || "{}"); } catch (_) { params = {}; }
+      const item = { name: s.name, params };
+      if (s.deps && s.deps.trim()) item.deps = s.deps.split(",").map(x => x.trim());
+      return item;
+    }),
+  };
+}
+
+/* ---------- 预览 / 保存 ---------- */
+async function preview() {
+  if (!pipe.length) return toast("请先添加阶段", "err");
+  const text = $("#run-text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-preview");
+  setLoading(btn, true, "预览中…");
+  try {
+    const r = await api("/api/pipeline/preview", { method: "POST", body: { text, config: buildConfig() } });
+    $("#run-out").textContent = JSON.stringify(r.output, null, 2);
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function save() {
+  if (!pipe.length) return toast("请先添加阶段", "err");
+  const btn = $("#btn-save");
+  setLoading(btn, true, "保存中…");
+  try {
+    const r = await api("/api/pipeline", { method: "POST", body: { config: buildConfig() } });
+    toast(`已保存流水线「${r.name}」`);
+    loadSaved();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+/* ---------- 已保存 ---------- */
+let savedPipes = [];
+async function loadSaved() {
+  try {
+    const r = await api("/api/pipeline");
+    savedPipes = r.pipelines;
+    $("#saved-pipes").innerHTML = '<option value="">— 选择已保存流水线 —</option>' +
+      savedPipes.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  } catch (e) {}
+}
+
+$("#btn-load").addEventListener("click", async () => {
+  const id = $("#saved-pipes").value;
+  if (!id) return toast("请选择流水线", "err");
+  const p = savedPipes.find(x => x.id === id);
+  if (!p) return;
+  pipe = p.config.stages.map(s => ({ name: s.name, params: JSON.stringify(s.params || {}), deps: (s.deps || []).join(",") }));
+  $("#pipe-name").value = p.name;
+  renderPipe();
+  toast("已加载配置");
+});
+
+/* ---------- 执行 ---------- */
+function renderRunResult(r) {
+  const out = $("#run-out");
+  if (r.ok) {
+    out.textContent = JSON.stringify(r.output, null, 2);
+    $("#run-stat").textContent = "执行成功";
+  } else {
+    out.textContent = "错误：" + (r.error || "未知错误");
+    $("#run-stat").textContent = "执行失败";
+  }
+}
+
+async function runSingle() {
+  const id = $("#saved-pipes").value;
+  const text = $("#run-text").value.trim();
+  if (!id) return toast("请先保存并选择流水线", "err");
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-run");
+  setLoading(btn, true, "执行中…");
+  try {
+    const r = await api(`/api/pipeline/${id}/run`, { method: "POST", body: { text } });
+    renderRunResult(r);
+    loadHistory();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function runBatch() {
+  const id = $("#saved-pipes").value;
+  if (!id) return toast("请先保存并选择流水线", "err");
+  const btn = $("#btn-batch");
+  setLoading(btn, true, "批量执行中…");
+  try {
+    const r = await api(`/api/pipeline/${id}/run`, { method: "POST", body: { batch: true } });
+    $("#run-stat").textContent = `成功 ${r.succeeded} / 失败 ${r.failed}（共 ${r.doc_count} 篇）`;
+    toast(`批量完成：成功 ${r.succeeded}，失败 ${r.failed}`);
+    loadHistory();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function loadHistory() {
+  try {
+    const r = await api("/api/results/pipeline_run?order_by=_created&order=desc&limit=20");
+    const el = $("#history");
+    if (!r.records.length) { el.innerHTML = '<span class="muted">暂无执行记录。</span>'; return; }
+    el.innerHTML = r.records.map(rec => `
+      <div class="list-item">
+        <div class="meta">
+          <div class="name">${esc(rec.run_id)} <span class="badge ${rec.batch ? "amber" : "blue"}">${rec.batch ? "批量" : "单条"}</span>
+            ${rec.batch ? `<span class="badge green">成功 ${rec.succeeded}</span><span class="badge red">失败 ${rec.failed}</span>` : ""}
+          </div>
+          <div class="sub">${rec.doc_count ? rec.doc_count + " 篇文档 · " : ""}${fmtTime(rec._created)}</div>
+        </div>
+      </div>`).join("");
+  } catch (e) {}
+}
+
+$("#btn-clear").addEventListener("click", () => { pipe = []; renderPipe(); });
+$("#btn-preview").addEventListener("click", preview);
+$("#btn-save").addEventListener("click", save);
+$("#btn-run").addEventListener("click", runSingle);
+$("#btn-batch").addEventListener("click", runBatch);
+
+loadStages();
+loadSaved();
+loadHistory();
+</script>
+</body>
+</html>

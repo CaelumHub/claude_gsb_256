@@ -1,0 +1,102 @@
+[
+  {
+    "text": "马云在北京的阿里巴巴公司工作，2024年10月1日发布了新产品，价格为99.9元。",
+    "result": {
+      "entities": [
+        {
+          "start": 0,
+          "end": 2,
+          "text": "马云",
+          "type": "PERSON"
+        },
+        {
+          "start": 3,
+          "end": 5,
+          "text": "北京",
+          "type": "LOCATION"
+        },
+        {
+          "start": 6,
+          "end": 10,
+          "text": "阿里巴巴",
+          "type": "ORGANIZATION"
+        },
+        {
+          "start": 15,
+          "end": 25,
+          "text": "2024年10月1日",
+          "type": "DATE"
+        },
+        {
+          "start": 35,
+          "end": 40,
+          "text": "99.9元",
+          "type": "MONEY"
+        }
+      ],
+      "entity_type_names": {
+        "PERSON": "人名",
+        "LOCATION": "地名",
+        "ORGANIZATION": "机构",
+        "TIME": "时间",
+        "DATE": "日期",
+        "NUMBER": "数字",
+        "MONEY": "金额",
+        "PERCENT": "百分比"
+      }
+    },
+    "created_at": 1791179856.9212594,
+    "id": "ner_1",
+    "_created": 1791179856.921914
+  },
+  {
+    "text": "马云在北京的阿里巴巴公司工作，2024年10月1日发布了新产品，价格为99.9元。",
+    "result": {
+      "entities": [
+        {
+          "start": 0,
+          "end": 2,
+          "text": "马云",
+          "type": "PERSON"
+        },
+        {
+          "start": 3,
+          "end": 5,
+          "text": "北京",
+          "type": "LOCATION"
+        },
+        {
+          "start": 6,
+          "end": 10,
+          "text": "阿里巴巴",
+          "type": "ORGANIZATION"
+        },
+        {
+          "start": 15,
+          "end": 25,
+          "text": "2024年10月1日",
+          "type": "DATE"
+        },
+        {
+          "start": 35,
+          "end": 40,
+          "text": "99.9元",
+          "type": "MONEY"
+        }
+      ],
+      "entity_type_names": {
+        "PERSON": "人名",
+        "LOCATION": "地名",
+        "ORGANIZATION": "机构",
+        "TIME": "时间",
+        "DATE": "日期",
+        "NUMBER": "数字",
+        "MONEY": "金额",
+        "PERCENT": "百分比"
+      }
+    },
+    "created_at": 1791179858.7738726,
+    "id": "ner_2",
+    "_created": 1791179858.7745469
+  }
+]

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>关键词提取 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .kw { display: inline-block; margin: 6px 4px; padding: 4px 14px; border-radius: 999px;
+      font-weight: 600; background: var(--primary-soft); color: var(--primary); }
+    .kw .f { font-size: 11px; opacity: .65; margin-left: 4px; }
+    .bar { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+    .bar .name { width: 90px; font-weight: 600; text-align: right; }
+    .bar .track { flex: 1; height: 10px; background: #eef0f6; border-radius: 999px; overflow: hidden; }
+    .bar .fill { height: 100%; background: var(--primary); border-radius: 999px; }
+    .bar .sc { width: 52px; font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">关键词提取</h1>
+    <p class="page-desc">TF-IDF 与 TextRank 混合打分，保留名词/动词/形容词等实义词。</p>
+
+    <section class="card">
+      <label>输入文本</label>
+      <textarea id="text" style="min-height:160px">自然语言处理是人工智能的重要分支。分词是自然语言处理的基础任务。词性标注为每个词标注语法类别。命名实体识别从文本中抽取人名、地名与机构名。情感分析判断文本的正负面倾向。文本摘要自动提炼文章的核心内容。机器翻译实现不同语言之间的自动转换。</textarea>
+      <div class="row mt">
+        <div style="width:140px"><label>关键词数量</label><input type="number" id="topk" value="10" min="1" max="50"></div>
+        <div style="width:180px"><label>算法</label>
+          <select id="method">
+            <option value="hybrid">混合（推荐）</option>
+            <option value="tfidf">TF-IDF</option>
+            <option value="textrank">TextRank</option>
+          </select>
+        </div>
+        <button class="btn" id="btn-kw">提取关键词</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>关键词云</h2>
+      <div class="keyword-cloud" id="cloud">尚未提取。</div>
+    </section>
+
+    <section class="card">
+      <h2>权重排名</h2>
+      <div id="bars"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("keywords.html");
+
+async function doExtract() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-kw");
+  setLoading(btn, true, "提取中…");
+  try {
+    const r = await api("/api/keywords", {
+      method: "POST",
+      body: { text, top_k: parseInt($("#topk").value), method: $("#method").value },
+    });
+    const kws = r.keywords;
+    if (!kws.length) { $("#cloud").textContent = "未提取到关键词。"; $("#bars").innerHTML = ""; return; }
+    const max = kws[0].score || 1;
+    // 词云字号随权重变化
+    $("#cloud").innerHTML = kws.map(k => {
+      const size = 14 + Math.round((k.score / max) * 14);
+      return `<span class="kw" style="font-size:${size}px">${esc(k.word)}<span class="f">${k.score}</span></span>`;
+    }).join("");
+    $("#bars").innerHTML = kws.map(k => `
+      <div class="bar">
+        <span class="name">${esc(k.word)}</span>
+        <div class="track"><div class="fill" style="width:${(k.score / max * 100).toFixed(1)}%"></div></div>
+        <span class="sc">${k.score} · ×${k.freq}</span>
+      </div>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+$("#btn-kw").addEventListener("click", doExtract);
+</script>
+</body>
+</html>

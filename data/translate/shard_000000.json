@@ -1,0 +1,14 @@
+[
+  {
+    "text": "我喜欢机器学习，人工智能正在改变世界。",
+    "result": {
+      "source": "我喜欢机器学习，人工智能正在改变世界。",
+      "translation": "I like machine learning artificial intelligence 正 in 改变 world.",
+      "direction": "zh->en",
+      "engine": "dictionary-based (simulated)"
+    },
+    "created_at": 1791179864.018737,
+    "id": "translate_1",
+    "_created": 1791179864.0191956
+  }
+]

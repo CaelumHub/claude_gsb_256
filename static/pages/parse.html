@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>句法分析树 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tabs button { padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface-2); cursor: pointer; font-size: 14px; }
+    .tabs button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .const-tree ul { list-style: none; padding-left: 22px; border-left: 1px dashed var(--border); margin-left: 8px; }
+    .const-tree .node > .head { font-weight: 600; color: var(--primary); }
+    .const-tree .leaf { color: var(--text); }
+    .const-tree .leaf .pos { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">句法分析树</h1>
+    <p class="page-desc">规则式依存句法分析（核心动词为根）与基于 CYK 的短语结构分析。</p>
+
+    <section class="card">
+      <label>输入句子</label>
+      <textarea id="text">北京大学的研究团队开发了高效的机器学习系统</textarea>
+      <div class="toolbar mt">
+        <button class="btn" id="btn-parse">句法分析</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="tabs">
+        <button class="active" id="tab-dep">依存句法树</button>
+        <button id="tab-const">短语结构树</button>
+      </div>
+      <div class="tree-wrap">
+        <div id="tree-out"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("parse.html");
+
+let lastDep = null, lastConst = null, view = "dep";
+
+/* ---------- 依存树 SVG ---------- */
+function renderDependency(dep) {
+  const words = dep.words, tags = dep.tags, heads = dep.heads, rels = dep.relations;
+  const n = words.length;
+  if (!n) return '<div class="muted">无内容</div>';
+
+  const children = words.map(() => []);
+  let root = -1;
+  heads.forEach((h, i) => { if (h < 0) root = i; else children[h].push(i); });
+  if (root < 0) root = 0;
+
+  const depth = new Array(n).fill(0);
+  const queue = [root];
+  while (queue.length) {
+    const node = queue.shift();
+    children[node].forEach(c => { depth[c] = depth[node] + 1; queue.push(c); });
+  }
+  const maxDepth = Math.max(...depth, 1);
+
+  const xStep = 96, x0 = 70;
+  const yTop = 30, yStep = 96;
+  const width = n * xStep + 80;
+  const height = (maxDepth + 1) * yStep + 40;
+
+  const pos = words.map((_, i) => ({
+    x: x0 + i * xStep,
+    y: yTop + depth[i] * yStep,
+  }));
+
+  // 节点宽度估算
+  const nodeW = (i) => Math.max(words[i].length * 17 + 18, 56);
+
+  let edges = "";
+  heads.forEach((h, i) => {
+    if (h < 0) return;
+    const a = pos[h], b = pos[i];
+    const mx = (a.x + b.x) / 2;
+    const my = Math.min(a.y, b.y) - 34;
+    edges += `<path d="M ${a.x} ${a.y} C ${a.x} ${my}, ${b.x} ${my}, ${b.x} ${b.y}"
+      fill="none" stroke="#b6c2e0" stroke-width="1.6"/>`;
+    const rel = DEP_REL_NAMES[rels[i]] || rels[i];
+    edges += `<text x="${mx}" y="${my - 6}" font-size="11" fill="#8a94ad" text-anchor="middle">${rel}</text>`;
+  });
+
+  let nodes = "";
+  words.forEach((w, i) => {
+    const p = pos[i];
+    const wd = nodeW(i);
+    const h = 42;
+    const fill = i === root ? "#4f6ef7" : "#ffffff";
+    const textColor = i === root ? "#ffffff" : "#1f2430";
+    nodes += `<g>
+      <rect x="${p.x - wd / 2}" y="${p.y - h / 2}" width="${wd}" height="${h}" rx="8"
+        fill="${fill}" stroke="${i === root ? '#4f6ef7' : '#d5d9e6'}" stroke-width="1.4"/>
+      <text x="${p.x}" y="${p.y + 2}" font-size="14" font-weight="600" fill="${textColor}" text-anchor="middle">${esc(w)}</text>
+      <text x="${p.x}" y="${p.y + 16}" font-size="10" fill="${i === root ? '#c7d2fe' : '#8a94ad'}" text-anchor="middle">${tags[i]}</text>
+    </g>`;
+  });
+
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <style>text{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif}</style>
+    ${edges}${nodes}</svg>`;
+}
+
+/* ---------- 成分树嵌套 ---------- */
+function renderConstituency(tree) {
+  function node(t) {
+    if (t.word != null) {
+      const pos = t.label;
+      return `<li class="leaf"><span class="head">${esc(t.word)}</span><span class="pos">${pos}</span></li>`;
+    }
+    const name = PHRASE_NAMES[t.label] || t.label;
+    const kids = (t.children || []).map(node).join("");
+    return `<li class="node"><span class="head">${esc(t.label)} <small class="muted">${name}</small></span><ul>${kids}</ul></li>`;
+  }
+  return `<div class="const-tree"><ul>${node(tree)}</ul></div>`;
+}
+
+function render() {
+  const out = $("#tree-out");
+  if (view === "dep" && lastDep) {
+    out.innerHTML = renderDependency(lastDep.dependency);
+  } else if (view === "const" && lastConst) {
+    out.innerHTML = renderConstituency(lastConst);
+  } else {
+    out.innerHTML = '<div class="muted">请先进行分析。</div>';
+  }
+}
+
+async function doParse() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入句子", "err");
+  const btn = $("#btn-parse");
+  setLoading(btn, true, "分析中…");
+  try {
+    const r = await api("/api/parse", { method: "POST", body: { text } });
+    lastDep = r; lastConst = r.constituency.tree;
+    render();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+$("#btn-parse").addEventListener("click", doParse);
+$("#tab-dep").addEventListener("click", () => {
+  view = "dep";
+  $("#tab-dep").classList.add("active"); $("#tab-const").classList.remove("active");
+  render();
+});
+$("#tab-const").addEventListener("click", () => {
+  view = "const";
+  $("#tab-const").classList.add("active"); $("#tab-dep").classList.remove("active");
+  render();
+});
+
+doParse();
+</script>
+</body>
+</html>

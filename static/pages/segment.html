@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>分词与词性标注 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">分词与词性标注</h1>
+    <p class="page-desc">基于词典最大概率路径 + HMM 未登录词识别进行分词，并用 HMM Viterbi 标注词性。</p>
+
+    <section class="card">
+      <div class="mb">
+        <label>输入文本（或选择语料）</label>
+        <textarea id="text" placeholder="输入要分析的文本…">自然语言处理是人工智能的重要分支，北京大学的研究团队开发了一个高效的机器学习系统。</textarea>
+      </div>
+      <div class="row mb">
+        <select id="corpus-sel" style="max-width:280px"><option value="">— 从语料库选择 —</option></select>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="btn-seg">分词</button>
+        <button class="btn secondary" id="btn-pos">词性标注</button>
+        <span class="badge blue" id="stat"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="toolbar"><h2 style="margin:0;flex:1" id="out-title">分词结果</h2></div>
+      <div id="output" class="output plain">尚未分析。</div>
+      <div class="mt small muted" id="legend"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("segment.html");
+
+// 加载语料到下拉框
+async function loadCorpusOptions() {
+  try {
+    const data = await api("/api/corpus");
+    const sel = $("#corpus-sel");
+    sel.innerHTML = '<option value="">— 从语料库选择 —</option>' +
+      data.corpora.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  } catch (_) {}
+}
+$("#corpus-sel").addEventListener("change", async (e) => {
+  const id = e.target.value;
+  if (!id) return;
+  const r = await api(`/api/corpus/${id}`);
+  $("#text").value = r.text;
+});
+
+function legend() {
+  $("#legend").innerHTML =
+    "词性图例：" + Object.entries(TAG_NAMES)
+      .map(([t, n]) => `<span class="pos-tag pos-${t}">${t} ${n}</span>`).join(" ");
+}
+
+async function doSegment() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-seg");
+  setLoading(btn, true, "分词中…");
+  try {
+    const r = await api("/api/segment", { method: "POST", body: { text } });
+    $("#out-title").textContent = `分词结果（共 ${r.count} 词）`;
+    $("#output").innerHTML = r.words.map(w => `<span class="token"><span class="t-word">${esc(w)}</span></span>`).join("");
+    $("#stat").textContent = `已保存结果 #${r.id}`;
+    legend();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function doPos() {
+  const text = $("#text").value.trim();
+  if (!text) return toast("请输入文本", "err");
+  const btn = $("#btn-pos");
+  setLoading(btn, true, "标注中…");
+  try {
+    const r = await api("/api/pos", { method: "POST", body: { text } });
+    $("#out-title").textContent = `词性标注结果（共 ${r.tokens.length} 词）`;
+    $("#output").innerHTML = renderTokens(r.tokens);
+    $("#stat").textContent = `已保存结果 #${r.id}`;
+    legend();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+$("#btn-seg").addEventListener("click", doSegment);
+$("#btn-pos").addEventListener("click", doPos);
+
+loadCorpusOptions();
+legend();
+</script>
+</body>
+</html>
