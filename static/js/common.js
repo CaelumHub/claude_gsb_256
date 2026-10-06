@@ -4,6 +4,7 @@
 
 const PAGES = [
   { file: "corpus.html",    name: "语料库管理",   desc: "上传与清洗" },
+  { file: "similarity.html", name: "相似检索查重", desc: "相似度 + 去重" },
   { file: "segment.html",   name: "分词与词性标注", desc: "切词 + POS" },
   { file: "parse.html",     name: "句法分析树",   desc: "依存 / 成分树" },
   { file: "ner.html",       name: "命名实体识别", desc: "NER 与标注" },
@@ -16,10 +17,10 @@ const PAGES = [
 ];
 
 const PAGE_NAMES = {
-  corpus: "语料库管理", segment: "分词与词性标注", parse: "句法分析树",
-  ner: "命名实体识别", sentiment: "情感分析", summary: "文本摘要",
-  translate: "机器翻译", keywords: "关键词提取", embedding: "词向量可视化",
-  pipeline: "流水线配置与执行",
+  corpus: "语料库管理", similarity: "相似检索与查重", segment: "分词与词性标注",
+  parse: "句法分析树", ner: "命名实体识别", sentiment: "情感分析",
+  summary: "文本摘要", translate: "机器翻译", keywords: "关键词提取",
+  embedding: "词向量可视化", pipeline: "流水线配置与执行",
 };
 
 // 中文标签集（与后端 /api/meta 一致，离线可用）

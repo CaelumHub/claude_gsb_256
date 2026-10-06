@@ -19,6 +19,7 @@ from nlp import (get_constituency_parser, get_embeddings, get_keywords, get_ner,
                  get_tagger, get_translator, ENTITY_TYPE_NAMES, TAG_NAMES,
                  DEP_REL_NAMES, PHRASE_NAMES, POLARITY_NAMES)
 from nlp.lexicon import STOPWORDS
+from nlp.similarity import DEFAULT_THRESHOLD
 from storage import StoreRegistry
 
 
@@ -35,6 +36,10 @@ def _registry() -> StoreRegistry:
 
 def _engine():
     return current_app.config["PIPELINE_ENGINE"]
+
+
+def _similarity():
+    return current_app.config["SIMILARITY_SERVICE"]
 
 
 def _models_dir() -> str:
@@ -146,7 +151,16 @@ def create_corpus():
         "created_at": time.time(),
     }
     rid = _registry().task("corpus").insert(record)
+    _index_hook(rid, text)
     return jsonify({"id": rid, "ok": True})
+
+
+def _index_hook(rid: str, text: str) -> None:
+    """语料写入后同步相似度索引；失败不影响主流程（索引可自愈）。"""
+    try:
+        _similarity().on_corpus_added(rid, text)
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.warning("相似度索引更新失败（将在下次检索时自愈）: %s", exc)
 
 
 @api.post("/corpus/upload")
@@ -167,6 +181,7 @@ def upload_corpus():
     name = data_name = file.filename or "上传文件"
     record = {"name": name, "text": text.strip(), "created_at": time.time()}
     rid = _registry().task("corpus").insert(record)
+    _index_hook(rid, record["text"])
     return jsonify({"id": rid, "name": name, "length": len(text), "ok": True})
 
 
@@ -181,6 +196,11 @@ def get_corpus(cid: str):
 @api.delete("/corpus/<cid>")
 def delete_corpus(cid: str):
     ok = _registry().task("corpus").delete(cid)
+    if ok:
+        try:
+            _similarity().on_corpus_deleted(cid)
+        except Exception as exc:  # noqa: BLE001
+            current_app.logger.warning("相似度索引清理失败（将在下次检索时自愈）: %s", exc)
     return jsonify({"ok": ok})
 
 
@@ -193,6 +213,63 @@ def clean_corpus(cid: str):
     result = _clean(record.get("text", ""), data.get("remove_stopwords", True))
     _store_result("clean", record.get("text", ""), result, corpus_id=cid)
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# 相似检索与全库查重
+# ---------------------------------------------------------------------------
+
+@api.post("/similarity/search")
+def similarity_search():
+    """对任意文本（或库内文档）检索最相似的语料。
+
+    跨全部分片汇总打分后全局排序；排序键为 ``(-score, id)`` 全序，
+    ``offset/limit`` 翻页连续、不重不漏。
+    """
+    data = _payload()
+    text = (data.get("text") or "").strip()
+    corpus_id = data.get("corpus_id")
+    if not text and not corpus_id:
+        return jsonify({"error": "缺少查询文本或 corpus_id"}), 400
+    try:
+        limit = min(max(int(data.get("limit", 10)), 1), 100)
+        offset = max(int(data.get("offset", 0)), 0)
+        min_score = min(max(float(data.get("min_score", 0.0)), 0.0), 1.0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit/offset/min_score 参数非法"}), 400
+    try:
+        result = _similarity().search(
+            text=text or None, corpus_id=corpus_id,
+            limit=limit, offset=offset, min_score=min_score,
+            include_self=bool(data.get("include_self")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(result)
+
+
+@api.post("/dedup/run")
+def dedup_run():
+    """对整个语料库跑一轮查重，把高度相似的文档归成一组。"""
+    data = _payload()
+    try:
+        threshold = float(data.get("threshold", DEFAULT_THRESHOLD))
+    except (TypeError, ValueError):
+        return jsonify({"error": "threshold 参数非法"}), 400
+    if not 0.0 < threshold <= 1.0:
+        return jsonify({"error": "threshold 需在 (0, 1] 区间"}), 400
+    return jsonify(_similarity().run_dedup(threshold))
+
+
+@api.get("/dedup/groups")
+def dedup_groups():
+    """查看最近一次查重的归组结果（stale=true 表示语料已变化，建议重跑）。"""
+    return jsonify(_similarity().groups())
+
+
+@api.post("/similarity/reindex")
+def similarity_reindex():
+    """全量重建相似度索引（特征口径升级或索引异常时使用）。"""
+    return jsonify(_similarity().reindex())
 
 
 # ---------------------------------------------------------------------------

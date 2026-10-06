@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>相似检索与查重 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .score-bar { height: 6px; background: var(--surface-2, #eef0f5); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+    .score-bar > i { display: block; height: 100%; background: var(--primary, #4f46e5); border-radius: 3px; }
+    .group-members { margin-top: 8px; }
+    .group-members .list-item { padding: 8px 10px; }
+    .pager { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 12px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">相似检索与查重</h1>
+    <p class="page-desc">对任意文本跨全部分片检索最相似的语料（全局排序、稳定翻页）；或对整库做一轮查重，把高度相似的文档归成一组。相似度口径确定：容忍同义替换与语序调整，但不会把主题相近、内容不同的文档误判为重复。</p>
+
+    <div class="grid cols-2">
+      <!-- 相似检索 -->
+      <section class="card">
+        <h2>相似检索</h2>
+        <div class="mb">
+          <label>查询文本（粘贴任意一段文字）</label>
+          <textarea id="q-text" placeholder="在此粘贴要检索的文本…"></textarea>
+        </div>
+        <div class="mb">
+          <label>或选择库内文档</label>
+          <select id="q-corpus"><option value="">（不使用库内文档）</option></select>
+        </div>
+        <div class="row">
+          <div class="grow">
+            <label>每页条数</label>
+            <input type="number" id="q-limit" value="10" min="1" max="100">
+          </div>
+          <div class="grow">
+            <label>最低相似度（0–1）</label>
+            <input type="number" id="q-min-score" value="0" min="0" max="1" step="0.05">
+          </div>
+          <button class="btn" id="btn-search">检索</button>
+        </div>
+        <div class="mt muted small" id="search-meta"></div>
+      </section>
+
+      <!-- 全库查重 -->
+      <section class="card">
+        <h2>全库查重</h2>
+        <div class="row">
+          <div class="grow">
+            <label>重复判定阈值（0–1，默认 0.6，越高越严格）</label>
+            <input type="number" id="dedup-threshold" value="0.6" min="0.1" max="1" step="0.05">
+          </div>
+          <button class="btn" id="btn-dedup">运行查重</button>
+          <button class="btn secondary" id="btn-groups">刷新归组</button>
+        </div>
+        <div class="mt muted small" id="dedup-meta">尚未运行查重。</div>
+        <div class="mt" id="dedup-stats"></div>
+      </section>
+    </div>
+
+    <!-- 检索结果 -->
+    <section class="card" id="result-card" style="display:none">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">检索结果</h2>
+        <span class="muted small" id="result-total"></span>
+      </div>
+      <div class="list" id="result-list"></div>
+      <div class="pager">
+        <button class="btn secondary small" id="btn-prev">上一页</button>
+        <span class="muted small" id="page-info"></span>
+        <button class="btn secondary small" id="btn-next">下一页</button>
+      </div>
+    </section>
+
+    <!-- 查重归组 -->
+    <section class="card" id="group-card" style="display:none">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">重复归组</h2>
+        <span class="badge amber" id="group-stale" style="display:none">语料已变化，建议重跑查重</span>
+        <span class="muted small" id="group-total"></span>
+      </div>
+      <div id="group-list"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("similarity.html");
+
+const state = { offset: 0, limit: 10, total: 0 };
+
+async function loadCorpusOptions() {
+  try {
+    const data = await api("/api/corpus");
+    const sel = $("#q-corpus");
+    sel.innerHTML = '<option value="">（不使用库内文档）</option>' +
+      data.corpora.map(c => `<option value="${esc(c.id)}">${esc(c.name)}（${c.length} 字）</option>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function doSearch(offset) {
+  const text = $("#q-text").value.trim();
+  const corpusId = $("#q-corpus").value;
+  if (!text && !corpusId) return toast("请输入查询文本或选择库内文档", "err");
+  const limit = Math.max(1, Math.min(100, parseInt($("#q-limit").value) || 10));
+  const minScore = Math.max(0, Math.min(1, parseFloat($("#q-min-score").value) || 0));
+  state.limit = limit; state.offset = offset;
+  const btn = $("#btn-search");
+  setLoading(btn, true, "检索中…");
+  try {
+    const body = { limit, offset, min_score: minScore };
+    if (text) body.text = text; else body.corpus_id = corpusId;
+    const r = await api("/api/similarity/search", { method: "POST", body });
+    state.total = r.total;
+    renderResults(r);
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+function renderResults(r) {
+  $("#result-card").style.display = "";
+  $("#result-total").textContent = `共 ${r.total} 条 · 耗时 ${r.elapsed_ms} ms`;
+  const list = $("#result-list");
+  if (!r.results.length) {
+    list.innerHTML = '<div class="muted">没有满足条件的相似文档。</div>';
+  } else {
+    list.innerHTML = r.results.map(it => `
+      <div class="list-item">
+        <div class="meta" style="flex:1">
+          <div class="name">${esc(it.name)}
+            <span class="badge blue small">${(it.score * 100).toFixed(1)}%</span>
+            <span class="badge small">${esc(it.corpus_id)}</span>
+          </div>
+          <div class="sub">字重合 Jaccard ${it.components.shingle_jaccard} · 字包含度 ${it.components.shingle_containment} · 词包含度 ${it.components.token_containment}</div>
+          <div class="preview mt">${esc(it.preview)}</div>
+          <div class="score-bar"><i style="width:${(it.score * 100).toFixed(1)}%"></i></div>
+        </div>
+      </div>`).join("");
+  }
+  const from = r.total ? r.offset + 1 : 0;
+  const to = Math.min(r.offset + r.limit, r.total);
+  $("#page-info").textContent = `第 ${from}–${to} 条 / 共 ${r.total} 条`;
+  $("#btn-prev").disabled = r.offset <= 0;
+  $("#btn-next").disabled = r.offset + r.limit >= r.total;
+}
+
+async function runDedup() {
+  const threshold = parseFloat($("#dedup-threshold").value) || 0.6;
+  const btn = $("#btn-dedup");
+  setLoading(btn, true, "查重中…");
+  try {
+    const r = await api("/api/dedup/run", { method: "POST", body: { threshold } });
+    $("#dedup-meta").textContent =
+      `共 ${r.doc_count} 篇 · 候选对 ${r.candidate_pairs}（${r.candidate_mode === "lsh" ? "LSH 分带" : "全配对"}）· ` +
+      `相似对 ${r.similar_pairs} · 归成 ${r.groups} 组 / ${r.docs_grouped} 篇 · 耗时 ${r.elapsed_ms} ms`;
+    loadGroups();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+}
+
+async function loadGroups() {
+  try {
+    const r = await api("/api/dedup/groups");
+    const card = $("#group-card");
+    if (r.never_run) { card.style.display = "none"; return; }
+    card.style.display = "";
+    $("#group-stale").style.display = r.stale ? "" : "none";
+    $("#group-total").textContent =
+      `阈值 ${r.threshold} · ${r.group_count} 组 / ${r.docs_grouped} 篇（语料共 ${r.corpus_size} 篇）`;
+    const host = $("#group-list");
+    if (!r.groups.length) {
+      host.innerHTML = '<div class="muted">没有发现高度相似的文档组。</div>';
+      return;
+    }
+    host.innerHTML = r.groups.map(g => `
+      <div class="card" style="margin-bottom:12px">
+        <div class="toolbar" style="margin-bottom:6px">
+          <strong style="flex:1">${esc(g.gid)}</strong>
+          <span class="badge red small">${g.size} 篇重复</span>
+          <span class="badge blue small">组内平均 ${(g.avg_score * 100).toFixed(1)}%</span>
+        </div>
+        <div class="group-members">
+          ${g.members.map(m => `
+            <div class="list-item">
+              <div class="meta" style="flex:1">
+                <div class="name">${esc(m.name)}
+                  ${m.corpus_id === g.representative ? '<span class="badge green small">代表</span>' : ''}
+                  <span class="badge small">${esc(m.corpus_id)}</span>
+                  ${m.best_score != null ? `<span class="badge amber small">最高相似 ${(m.best_score * 100).toFixed(1)}%</span>` : ''}
+                </div>
+                <div class="sub">${esc(m.preview)}</div>
+              </div>
+            </div>`).join("")}
+        </div>
+      </div>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+$("#btn-search").addEventListener("click", () => doSearch(0));
+$("#btn-prev").addEventListener("click", () => doSearch(Math.max(0, state.offset - state.limit)));
+$("#btn-next").addEventListener("click", () => doSearch(state.offset + state.limit));
+$("#btn-dedup").addEventListener("click", runDedup);
+$("#btn-groups").addEventListener("click", loadGroups);
+
+loadCorpusOptions();
+loadGroups();
+</script>
+</body>
+</html>

@@ -16,14 +16,14 @@ from .summarizer import Summarizer
 from .translator import Translator
 from .keywords import KeywordExtractor
 from .embeddings import WordEmbeddings
-from . import lexicon, text, hmm
+from . import lexicon, text, hmm, similarity
 
 __all__ = [
     "Segmenter", "POSTagger", "DependencyParser", "ConstituencyParser",
     "NERExtractor", "SentimentAnalyzer", "Summarizer", "Translator",
     "KeywordExtractor", "WordEmbeddings",
     "TAG_NAMES", "TAGSET", "DEP_REL_NAMES", "PHRASE_NAMES", "ENTITY_TYPE_NAMES",
-    "POLARITY_NAMES", "lexicon", "text", "hmm",
+    "POLARITY_NAMES", "lexicon", "text", "hmm", "similarity",
     "get_segmenter", "get_tagger", "get_parser", "get_ner", "get_sentiment",
     "get_summarizer", "get_translator", "get_keywords", "get_embeddings",
 ]
