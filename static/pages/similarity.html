@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>相似度检索与查重 - NLP 流水线平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="site-sidebar"></aside>
+
+  <main class="main">
+    <h1 class="page-title">相似度检索与查重</h1>
+    <p class="page-desc">
+      多粒度指纹（词 / 字 / 字bigram）+ 语义扩展双通道 LSH：容忍同义替换与语序调整，
+      跨分片汇总游标分页；全库查重用并查集稳定归组，增删文档后组 ID 不被冲乱。
+    </p>
+
+    <!-- 索引状态 -->
+    <section class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">索引状态</h2>
+        <button class="btn secondary small" id="btn-refresh">刷新</button>
+        <button class="btn secondary small" id="btn-reindex">强制重建</button>
+      </div>
+      <div id="index-status" class="muted small mt">加载中…</div>
+    </section>
+
+    <div class="grid cols-2">
+      <!-- 相似检索 -->
+      <section class="card">
+        <h2>相似检索</h2>
+        <div class="mb">
+          <label>查询方式</label>
+          <div class="row">
+            <label><input type="radio" name="qmode" value="text" checked> 输入任意文本</label>
+            <label><input type="radio" name="qmode" value="corpus"> 选择库内文档</label>
+          </div>
+        </div>
+        <div class="mb" id="query-text-box">
+          <label>查询文本</label>
+          <textarea id="query-text" placeholder="粘贴任意一段文本，在全库中找内容最相似的文档…"></textarea>
+        </div>
+        <div class="mb" id="query-doc-box" style="display:none">
+          <label>库内文档</label>
+          <select id="query-doc"></select>
+        </div>
+        <div class="grid cols-2">
+          <div class="mb">
+            <label>每页条数</label>
+            <input type="number" id="search-limit" value="5" min="1" max="100">
+          </div>
+          <div class="mb">
+            <label>语义权重：<span id="sem-w-label">0.45</span></label>
+            <input type="range" id="sem-weight" min="0" max="1" step="0.05" value="0.45">
+          </div>
+        </div>
+        <button class="btn" id="btn-search">检索相似文档</button>
+        <div class="mt" id="search-meta" class="muted small"></div>
+        <div class="list" id="search-results">
+          <div class="muted small">尚未检索。</div>
+        </div>
+        <div class="row mt" id="pager-row" style="display:none">
+          <button class="btn secondary small" id="btn-next-page">下一页 →</button>
+          <span class="muted small" id="page-info"></span>
+        </div>
+      </section>
+
+      <!-- 全库查重 -->
+      <section class="card">
+        <h2>全库查重</h2>
+        <p class="muted small">
+          总分 = (1-w) × 词法融合 + w × 语义；<b>词法下限</b>要求保留共同表面文本证据，
+          防止「同主题、不同内容」被误判。
+        </p>
+        <div class="grid cols-2">
+          <div class="mb">
+            <label>重复阈值（总分 ≥）<span class="muted small">默认 0.72</span></label>
+            <input type="number" id="dup-threshold" value="0.72" min="0" max="1" step="0.01">
+          </div>
+          <div class="mb">
+            <label>词法下限（lexical ≥）<span class="muted small">默认 0.35</span></label>
+            <input type="number" id="lex-floor" value="0.35" min="0" max="1" step="0.01">
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-dedup">执行全库查重</button>
+          <button class="btn secondary" id="btn-load-groups">载入已有归组</button>
+        </div>
+        <div class="mt muted small" id="dedup-meta"></div>
+        <div class="list" id="dedup-groups">
+          <div class="muted small">尚未执行查重。</div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
+renderNav("similarity.html");
+
+let currentCursor = null;
+
+function scoreBar(score) {
+  const pct = Math.round(score * 100);
+  const cls = score >= 0.72 ? "blue" : score >= 0.4 ? "" : "gray";
+  return `<div class="score-bar"><div class="score-fill ${cls}" style="width:${pct}%"></div>
+          <span>${pct}%</span></div>`;
+}
+
+async function loadCorpora() {
+  const data = await api("/api/corpus");
+  $("#query-doc").innerHTML = data.corpora.map(
+    c => `<option value="${esc(c.id)}">${esc(c.name)}（${esc(c.id)}）</option>`).join("");
+}
+
+document.querySelectorAll('input[name="qmode"]').forEach(r =>
+  r.addEventListener("change", () => {
+    const mode = document.querySelector('input[name="qmode"]:checked').value;
+    $("#query-text-box").style.display = mode === "text" ? "" : "none";
+    $("#query-doc-box").style.display = mode === "corpus" ? "" : "none";
+  }));
+
+$("#sem-weight").addEventListener("input", e => $("#sem-w-label").textContent = e.target.value);
+
+async function loadStatus() {
+  const box = $("#index-status");
+  try {
+    const s = await api("/api/similarity/status");
+    if (!s.built) {
+      box.innerHTML = `<span class="muted">尚未建立索引（${s.corpus_count} 篇语料），检索时将自动构建。</span>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="row wrap">
+        <span class="badge blue small">索引版本 v${s.index_version}</span>
+        <span class="badge small">指纹方案 v${s.fp_version}</span>
+        <span class="badge ${s.in_sync ? "green" : "orange"} small">
+          ${s.in_sync ? "与语料同步" : "语料已变更，待重建"}</span>
+        <span class="muted">已索引 ${s.doc_count} / ${s.corpus_count} 篇 · ${s.shard_count} 个指纹分片</span>
+        <span class="muted">查重组：${s.group_count}${s.dedup_ran ? "（已执行）" : ""}</span>
+      </div>
+      <div class="muted small mt">构建时间：${fmtTime(s.built_at)} · 语义权重：${(s.score_config||{}).sem_weight ?? "-"}</div>`;
+  } catch (e) { box.textContent = e.message; }
+}
+
+$("#btn-refresh").addEventListener("click", () => { loadStatus(); loadCorpora(); });
+$("#btn-reindex").addEventListener("click", async () => {
+  const btn = $("#btn-reindex");
+  setLoading(btn, true, "重建中…");
+  try {
+    await api("/api/similarity/reindex", { method: "POST" });
+    toast("索引已重建");
+    loadStatus();
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+});
+
+function renderResults(data) {
+  $("#search-meta").innerHTML =
+    `命中候选 ${data.candidate_count} 篇 · 返回 ${data.results.length} 篇 · 索引 v${data.index_version}` +
+    (data.stale_cursor ? ` · <span class="badge orange small">游标已过期（语料变更），结果可能不连续</span>` : "");
+  if (!data.results.length) {
+    $("#search-results").innerHTML = '<div class="muted small">没有相似文档。</div>';
+    $("#pager-row").style.display = "none";
+    return;
+  }
+  $("#search-results").innerHTML = data.results.map(r => `
+    <div class="list-item">
+      <div class="meta">
+        <div class="name">${esc(r.name || "未命名")}
+          <span class="muted small">${esc(r.id)}</span></div>
+        <div class="sub small">总分 <b>${r.score.toFixed(3)}</b>
+          · 词法 ${r.lexical.toFixed(3)}（词 ${r.word.toFixed(2)} / 字 ${r.char.toFixed(2)} / bigram ${r.bigram.toFixed(2)}）
+          · 语义 ${r.semantic.toFixed(3)} · ${r.length} 字</div>
+        <div class="preview mt small">${esc(r.preview)}</div>
+        ${scoreBar(r.score)}
+      </div>
+    </div>`).join("");
+  $("#pager-row").style.display = data.next_cursor ? "" : "none";
+  $("#page-info").textContent = data.next_cursor ? "" : "已到末页";
+}
+
+async function doSearch(isNext) {
+  const mode = document.querySelector('input[name="qmode"]:checked').value;
+  const payload = {
+    limit: parseInt($("#search-limit").value, 10) || 5,
+    sem_weight: parseFloat($("#sem-weight").value),
+  };
+  if (mode === "text") {
+    payload.text = $("#query-text").value.trim();
+    if (!payload.text) return toast("请输入查询文本", "err");
+  } else {
+    payload.corpus_id = $("#query-doc").value;
+  }
+  if (isNext) payload.cursor = currentCursor;
+  try {
+    const data = await api("/api/similarity/search", { method: "POST", body: payload });
+    currentCursor = data.next_cursor;
+    renderResults(data);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+$("#btn-search").addEventListener("click", () => doSearch(false));
+$("#btn-next-page").addEventListener("click", () => doSearch(true));
+
+function renderGroups(data) {
+  $("#dedup-meta").innerHTML =
+    `共 ${data.group_count} 个重复组（阈值 ${data.dup_threshold} / 词法下限 ${data.lex_floor}）
+     · 索引 v${data.index_version} · ${fmtTime(data.updated_at)}`;
+  if (!data.groups.length) {
+    $("#dedup-groups").innerHTML = '<div class="muted small">没有发现高度相似的文档组。</div>';
+    return;
+  }
+  $("#dedup-groups").innerHTML = data.groups.map(g => `
+    <div class="list-item dup-group">
+      <div class="meta">
+        <div class="name"><span class="badge blue small">${esc(g.group_id)}</span>
+          ${g.size} 篇 · 最高相似 ${(g.max_score || 0).toFixed(3)}
+          <span class="muted small">代表：${esc(g.representative)}，边 ${g.edge_count} 条</span></div>
+        <div class="members mt">
+          ${g.members.map(m => `
+            <div class="member ${m.id === g.representative ? "rep" : ""}">
+              <span class="muted small">${esc(m.id)}</span>
+              ${esc(m.name || "未命名")}
+              <span class="muted small">（${m.length} 字）</span>
+              <div class="preview small">${esc(m.preview)}</div>
+            </div>`).join("")}
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+$("#btn-dedup").addEventListener("click", async () => {
+  const btn = $("#btn-dedup");
+  setLoading(btn, true, "全库查重中…");
+  try {
+    const data = await api("/api/similarity/dedup/run", {
+      method: "POST",
+      body: {
+        dup_threshold: parseFloat($("#dup-threshold").value),
+        lex_floor: parseFloat($("#lex-floor").value),
+      },
+    });
+    renderGroups(data);
+    loadStatus();
+    toast(`查重完成：${data.group_count} 个重复组`);
+  } catch (e) { toast(e.message, "err"); }
+  setLoading(btn, false);
+});
+
+$("#btn-load-groups").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/similarity/dedup/groups");
+    renderGroups(data);
+  } catch (e) { toast(e.message, "err"); }
+});
+
+loadCorpora();
+loadStatus();
+</script>
+</body>
+</html>

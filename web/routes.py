@@ -626,3 +626,74 @@ def merge_results(task: str):
 @api.post("/results/compact_all")
 def compact_all():
     return jsonify({"compacted": _registry().compact_all()})
+
+
+# ---------------------------------------------------------------------------
+# 相似度检索与近重复查重
+# ---------------------------------------------------------------------------
+
+def _similarity():
+    return current_app.config["SIMILARITY_SERVICE"]
+
+
+@api.get("/similarity/status")
+def similarity_status():
+    return jsonify(_similarity().status())
+
+
+@api.post("/similarity/reindex")
+def similarity_reindex():
+    """显式重建索引（一般无需调用，检索/查重会自动同步）。"""
+    return jsonify(_similarity().ensure_index(force=True))
+
+
+@api.post("/similarity/search")
+def similarity_search():
+    """对任意文本或库内文档做跨分片相似检索，游标分页。"""
+    data = _payload()
+    text = (data.get("text") or "").strip() or None
+    doc_id = (data.get("corpus_id") or data.get("doc_id") or "").strip() or None
+    if not text and not doc_id:
+        return jsonify({"error": "请提供 text 或 corpus_id"}), 400
+    limit = min(max(int(data.get("limit", 10) or 10), 1), 200)
+    cursor = (data.get("cursor") or "").strip() or None
+    sem_weight = data.get("sem_weight")
+    try:
+        sem_weight = float(sem_weight) if sem_weight is not None else None
+        if sem_weight is not None and not 0.0 <= sem_weight <= 1.0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "sem_weight 需为 0~1 的数"}), 400
+
+    result = _similarity().search(
+        text=text, doc_id=doc_id, limit=limit,
+        cursor=cursor, sem_weight=sem_weight)
+    if result.get("error"):
+        return jsonify(result), 404 if "不存在" in result["error"] else 400
+    return jsonify(result)
+
+
+@api.post("/similarity/dedup/run")
+def similarity_dedup_run():
+    """全库查重并持久化稳定归组。"""
+    data = _payload()
+    try:
+        dup_threshold = float(data.get("dup_threshold", 0.72))
+        lex_floor = float(data.get("lex_floor", 0.35))
+    except (TypeError, ValueError):
+        return jsonify({"error": "阈值需为数值"}), 400
+    if not (0.0 <= dup_threshold <= 1.0 and 0.0 <= lex_floor <= 1.0):
+        return jsonify({"error": "阈值需在 0~1 之间"}), 400
+    try:
+        return jsonify(_similarity().run_dedup(dup_threshold, lex_floor))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 400
+
+
+@api.get("/similarity/dedup/groups")
+def similarity_dedup_groups():
+    data = _similarity().get_groups()
+    if data is None:
+        return jsonify({"groups": [], "group_count": 0,
+                        "hint": "尚未执行查重"}), 200
+    return jsonify(data)

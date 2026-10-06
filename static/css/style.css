@@ -302,3 +302,51 @@ table.data tr:hover td { background: var(--surface-2); }
   .main { margin-left: 0; padding: 20px; }
   .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
 }
+
+/* ---------- 相似度检索 / 查重 ---------- */
+.badge.gray { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+.badge.orange { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.row.wrap, .toolbar { row-gap: 8px; }
+
+.score-bar {
+  position: relative;
+  height: 16px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.score-bar .score-fill {
+  height: 100%;
+  border-radius: 8px;
+  background: #94a3b8;
+  transition: width .2s;
+}
+.score-bar .score-fill.blue { background: var(--primary); }
+.score-bar span {
+  position: absolute;
+  right: 8px;
+  top: -1px;
+  font-size: 11px;
+  color: #374151;
+  line-height: 18px;
+}
+
+.dup-group { align-items: flex-start; }
+.dup-group .members {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dup-group .member {
+  border-left: 3px solid #e5e7eb;
+  padding: 4px 8px;
+  background: #fafafa;
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+}
+.dup-group .member.rep {
+  border-left-color: var(--primary);
+  background: var(--primary-soft);
+}
+.dup-group .member .preview { max-height: 48px; margin-top: 2px; }

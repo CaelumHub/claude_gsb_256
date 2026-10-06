@@ -16,16 +16,18 @@ from .summarizer import Summarizer
 from .translator import Translator
 from .keywords import KeywordExtractor
 from .embeddings import WordEmbeddings
+from .similarity import SimilarityModel, MinHasher
 from . import lexicon, text, hmm
 
 __all__ = [
     "Segmenter", "POSTagger", "DependencyParser", "ConstituencyParser",
     "NERExtractor", "SentimentAnalyzer", "Summarizer", "Translator",
-    "KeywordExtractor", "WordEmbeddings",
+    "KeywordExtractor", "WordEmbeddings", "SimilarityModel", "MinHasher",
     "TAG_NAMES", "TAGSET", "DEP_REL_NAMES", "PHRASE_NAMES", "ENTITY_TYPE_NAMES",
     "POLARITY_NAMES", "lexicon", "text", "hmm",
     "get_segmenter", "get_tagger", "get_parser", "get_ner", "get_sentiment",
     "get_summarizer", "get_translator", "get_keywords", "get_embeddings",
+    "get_similarity_model", "get_minhasher",
 ]
 
 
@@ -78,3 +80,11 @@ def get_keywords() -> KeywordExtractor:
 
 def get_embeddings() -> WordEmbeddings:
     return _singleton("embeddings", WordEmbeddings)
+
+
+def get_similarity_model() -> SimilarityModel:
+    return _singleton("similarity_model", SimilarityModel)
+
+
+def get_minhasher() -> MinHasher:
+    return _singleton("minhasher", MinHasher)

@@ -20,7 +20,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from pipeline import PipelineEngine          # noqa: E402
-from storage import StoreRegistry             # noqa: E402
+from storage import SimilarityService, StoreRegistry  # noqa: E402
 from web import api                           # noqa: E402
 
 
@@ -34,9 +34,11 @@ def create_app(data_root: str | None = None) -> Flask:
     # 应用级单例，供蓝图通过 current_app.config 访问
     registry = StoreRegistry(data_root, shard_size=100)
     engine = PipelineEngine().register_builtin()
+    similarity = SimilarityService(registry)
     app.config["DATA_ROOT"] = data_root
     app.config["STORE_REGISTRY"] = registry
     app.config["PIPELINE_ENGINE"] = engine
+    app.config["SIMILARITY_SERVICE"] = similarity
     app.config["JSON_AS_ASCII"] = False
 
     app.register_blueprint(api)

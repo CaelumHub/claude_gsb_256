@@ -11,6 +11,7 @@ const PAGES = [
   { file: "summary.html",   name: "文本摘要",     desc: "抽取式摘要" },
   { file: "translate.html", name: "机器翻译",     desc: "模拟翻译" },
   { file: "keywords.html",  name: "关键词提取",   desc: "TF-IDF + TextRank" },
+  { file: "similarity.html", name: "相似度检索与查重", desc: "近重复检测" },
   { file: "embedding.html", name: "词向量可视化", desc: "降维投影" },
   { file: "pipeline.html",  name: "流水线配置",   desc: "编排与执行" },
 ];
@@ -18,7 +19,8 @@ const PAGES = [
 const PAGE_NAMES = {
   corpus: "语料库管理", segment: "分词与词性标注", parse: "句法分析树",
   ner: "命名实体识别", sentiment: "情感分析", summary: "文本摘要",
-  translate: "机器翻译", keywords: "关键词提取", embedding: "词向量可视化",
+  translate: "机器翻译", keywords: "关键词提取", similarity: "相似度检索与查重",
+  embedding: "词向量可视化",
   pipeline: "流水线配置与执行",
 };
 
